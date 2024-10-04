@@ -2,11 +2,14 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 import logging
-from .models import ZohoFormData
+from .models import EmailWhatsappNotifications, ZohoFormData
 import os
 from supabase import create_client, Client
 from django.conf import settings
 import ast
+from django.core.mail import send_mail
+from django.utils import timezone
+from twilio.rest import Client
 
 # Get Supabase credentials from environment variables or settings
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -32,87 +35,86 @@ def query_table():
 	    print(f"An error occurred: {e}")
 	    return None
 
-def display_data(request):
+def send_notifications(request):
     # Query the data
     data = query_table()
-    # data = ast.literal_eval(data)
-    emails = set()
+    emailsnotis = EmailWhatsappNotifications.objects.all()
+    emails = {notification.email for notification in emailsnotis}
 
     if data is None:
         return JsonResponse({"error": "Empty table"}, status=404)
     
     for record in data:
-        emails.add(record['email'])
-        # print(f"{record}\n")
+        if record['email'] in emails:
+            existingRecord = EmailWhatsappNotifications.objects.get(email=record['email'])
+
+            onboardingSubject = 'Generous Circle Onboarding'
+            onboardingMessage = 'Use the link provided to proceed to Activation'
+
+            activationSubject = "Generous Circle Activation"
+            activationMessage = 'Use the link provided to proceed to Activation'
+
+            notiTime = 300 # Time between sending next notification
+
+            if not existingRecord.onboarding:
+                time_since_update = timezone.now() - existingRecord.updated_at
+
+                if time_since_update.total_seconds() >= notiTime: # 5 minutes
+                    subject = onboardingSubject
+                    message = onboardingMessage
+
+                    send_notification_email(existingRecord.email, subject, message)
+
+                    existingRecord.save(update_fields=['updated_at'])
+                
+                else:
+                    send_notification_email('mundabrandon@outlook.com', 'Notifications', f'Time elapsed since last notification is < {notiTime} seconds')
+
+            if not existingRecord.activation:
+                time_since_update = timezone.now() - existingRecord.updated_at
+
+                if time_since_update.total_seconds() >= notiTime: # 5 minutes
+                    subject = onboardingSubject
+                    message = onboardingMessage
+
+                    send_notification_email(existingRecord.email, subject, message)
+
+                    existingRecord.save(update_fields=['updated_at'])
+                
+                else:
+                    send_notification_email('mundabrandon@outlook.com', 'Notifications', f'Time elapsed since last notification is < {notiTime} seconds')
+
+        else:
+            newEntry = EmailWhatsappNotifications.objects.create(email=record['email'], phone=record['phone'])
+            newEntry.save()
+
+            send_notification_email(newEntry.email)
+
+            emails.add(record['email'])
 
     # Pass the data to the template for rendering
     return JsonResponse({"data": str(emails)}, status=200)
 
-@csrf_exempt
-def zoho_webhook(request):
-    if request.method == 'POST':
-        try:
-            # Parse the incoming JSON payload
-            data = json.loads(request.body)
+def send_notification_email(email, subject=None, message=None):
+    if subject is None:
+        subject = 'Welcome to Generous Circle'
+    
+    if message is None:
+        message = 'Thank you for registering your account!'
 
-            # Extract fields from the incoming data
-            field1 = data.get('field1', None)
-            field2 = data.get('field2', None)
-            field3 = data.get('field3', None)
-            field4 = data.get('field4', None)
-            field5 = data.get('field5', None)
-            field6 = data.get('field6', None)
-            field7 = data.get('field7', None)
-            field8 = data.get('field8', None)
-            field9 = data.get('field9', None)
-            field10 = data.get('field10', None)
-            field11 = data.get('field11', None)
-            field12 = data.get('field12', None)
-            field13 = data.get('field13', None)
-            field14 = data.get('field14', None)
-            field15 = data.get('field15', None)
-            field16 = data.get('field16', None)
-            field17 = data.get('field17', None)
-            field18 = data.get('field18', None)
-            field19 = data.get('field19', None)
+    from_email = settings.EMAIL_HOST_USER
 
-            # Save the form data to the database
-            ZohoFormData.objects.create(
-                field1=field1,
-                field2=field2,
-                field3=field3,
-                field4=field4,
-                field5=field5,
-                field6=field6,
-                field7=field7,
-                field8=field8,
-                field9=field9,
-                field10=field10,
-                field11=field11,
-                field12=field12,
-                field13=field13,
-                field14=field14,
-                field15=field15,
-                field16=field16,
-                field17=field17,
-                field18=field18,
-                field19=field19,
-            )
+    send_mail(subject, message, from_email, [email])
 
-            logging.info("Form data saved successfully.")
-            return JsonResponse({"status": "success", "message": "Data received and saved successfully"})
+    send_whatsapp_notification(message)
 
-        except json.JSONDecodeError:
-            logging.error("Failed to decode JSON data.")
-            return JsonResponse({"status": "error", "message": "Invalid JSON data"}, status=400)
+def send_whatsapp_notification(message):
+    client = Client(os.getenv('ACCOUNT_SID'), os.getenv('AUTH_TOKEN'))
+    
+    message = client.messages.create(
+        body=message,
+        from_='whatsapp:+14155238886',
+        to='whatsapp:+254703676507'
+    )
 
-        except Exception as e:
-            logging.error(f"An error occurred: {e}")
-            return JsonResponse({"status": "error", "message": f"An error occurred: {e}"}, status=500)
-    else:
-        return JsonResponse({"status": "error", "message": "Invalid request method"}, status=405)
-
-def list_zoho_forms(request):
-    """API view to return all stored Zoho form data as JSON."""
-    forms = ZohoFormData.objects.all().values()  # Retrieve all form data as dictionaries
-    return JsonResponse(list(forms), safe=False)
+    return message.sid
