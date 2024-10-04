@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class ZohoFormData(models.Model):
     field1 = models.CharField(max_length=255, blank=True, null=True)
     field2 = models.CharField(max_length=255, blank=True, null=True)
@@ -20,7 +21,7 @@ class ZohoFormData(models.Model):
     field17 = models.CharField(max_length=255, blank=True, null=True)
     field18 = models.CharField(max_length=255, blank=True, null=True)
     field19 = models.CharField(max_length=255, blank=True, null=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

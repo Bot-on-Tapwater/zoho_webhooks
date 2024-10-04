@@ -3,6 +3,50 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 import logging
 from .models import ZohoFormData
+import os
+from supabase import create_client, Client
+from django.conf import settings
+import ast
+
+# Get Supabase credentials from environment variables or settings
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def query_table():
+    try:
+	    # Query the entire table
+        response = supabase.table('zoho_submissions_gc_leads').select('*').execute()
+
+	    # Check if there was an error
+        if not response.data:
+            print("Error: No data returned.")
+            return None
+
+	    # Get the data from the response
+        data = response.data
+        return data
+
+    except Exception as e:
+	    print(f"An error occurred: {e}")
+	    return None
+
+def display_data(request):
+    # Query the data
+    data = query_table()
+    # data = ast.literal_eval(data)
+    emails = set()
+
+    if data is None:
+        return JsonResponse({"error": "Empty table"}, status=404)
+    
+    for record in data:
+        emails.add(record['email'])
+        # print(f"{record}\n")
+
+    # Pass the data to the template for rendering
+    return JsonResponse({"data": str(emails)}, status=200)
 
 @csrf_exempt
 def zoho_webhook(request):
